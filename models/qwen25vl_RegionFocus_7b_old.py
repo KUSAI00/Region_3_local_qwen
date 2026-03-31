@@ -320,17 +320,10 @@ class Qwen25VLModel():
                     if content_item["type"] == "image_url":
                         # Extract base64 and add image type
                         url = content_item["image_url"]["url"]
-                        image_data = {
+                        formatted_msg["content"].append({
                             "type": "image",
                             "image": url
-                        }
-                        # Pass through pixel constraints to the Qwen processor
-                        if "min_pixels" in content_item:
-                            image_data["min_pixels"] = content_item["min_pixels"]
-                        if "max_pixels" in content_item:
-                            image_data["max_pixels"] = content_item["max_pixels"]
-                        
-                        formatted_msg["content"].append(image_data)
+                        })
                     else:
                         formatted_msg["content"].append(content_item)
                 formatted_messages.append(formatted_msg)
@@ -357,8 +350,6 @@ class Qwen25VLModel():
                 return_tensors="pt",
             ).to(self.model.device)
             
-            torch.cuda.empty_cache()
-            
             # Generate output
             generated_ids = self.model.generate(
                 **inputs, 
@@ -375,11 +366,6 @@ class Qwen25VLModel():
             output_text = self.processor.batch_decode(
                 generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
             )
-            
-            # Free up tensor memory manually
-            del inputs
-            del generated_ids
-            torch.cuda.empty_cache()
             
             return output_text[0]
             
@@ -406,7 +392,7 @@ class Qwen25VLModel():
             input_image.height,
             input_image.width,
             min_pixels=3136,
-                max_pixels=1003520,
+            max_pixels=12845056,
         )
         display_image = input_image.resize((resized_width, resized_height))
         computer_use = ComputerUse(
@@ -435,7 +421,7 @@ class Qwen25VLModel():
                     {
                         "type": "image_url",
                         "min_pixels": 3136,
-                        "max_pixels": 1003520,
+                        "max_pixels": 12845056,
                         "image_url": {"url": f"data:image/jpeg;base64,{encoded_string}"},
                     },
                     # {"type": "text", "text": instruction},
@@ -614,7 +600,7 @@ class Qwen25VLModel():
             {
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "min_pixels": 3136, "max_pixels": 1003520, "image_url": {"url": f"data:image/png;base64,{encoded_string}"}},
+                    {"type": "image_url", "min_pixels": 3136, "max_pixels": 12845056, "image_url": {"url": f"data:image/png;base64,{encoded_string}"}},
                     {"type": "text", "text": judge_prompt}
                 ],
             }
@@ -762,7 +748,7 @@ class Qwen25VLModel():
             {
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "min_pixels": 3136, "max_pixels": 1003520, "image_url": {"url": f"data:image/png;base64,{encoded_string}"}},
+                    {"type": "image_url", "min_pixels": 3136, "max_pixels": 12845056, "image_url": {"url": f"data:image/png;base64,{encoded_string}"}},
                     {"type": "text", "text": full_prompt}
                 ],
             }
@@ -819,7 +805,7 @@ class Qwen25VLModel():
             {
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "min_pixels": 3136, "max_pixels": 1003520, "image_url": {"url": f"data:image/png;base64,{encoded_string}"}},
+                    {"type": "image_url", "min_pixels": 3136, "max_pixels": 12845056, "image_url": {"url": f"data:image/png;base64,{encoded_string}"}},
                     {"type": "text", "text": action_prompt}
                 ],
             }
@@ -984,7 +970,7 @@ class Qwen25VLModel():
             {
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "min_pixels": 3136, "max_pixels": 1003520, "image_url": {"url": f"data:image/png;base64,{encoded_string}"}},
+                    {"type": "image_url", "min_pixels": 3136, "max_pixels": 12845056, "image_url": {"url": f"data:image/png;base64,{encoded_string}"}},
                     {"type": "text", "text": selection_prompt}
                 ],
             }
