@@ -387,7 +387,7 @@ def main(args):
     tasks_to_run = []
     for task_filename in task_filenames:
         dataset = task_filename + ".json"
-        with open(os.path.join(args.screenspot_test, dataset), 'r') as f:
+        with open(os.path.join(args.screenspot_test, dataset), 'r', encoding="utf-8") as f:
             task_data = json.load(f)
 
         # Create the list of tasks to run, one item as an instance. Tasks may be reused.

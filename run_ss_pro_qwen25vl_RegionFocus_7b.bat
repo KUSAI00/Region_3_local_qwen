@@ -1,6 +1,6 @@
 @echo off
 REM Activate your conda environment (edit this line!)
-call conda activate p2_3_11
+call conda activate pytorch_3_10
 
 set model=qwen25vl_RegionFocus_7b
 

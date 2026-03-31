@@ -14,7 +14,9 @@ import cv2
 import io
 import math
 from PIL import Image, ImageDraw
-from openai import OpenAI
+import torch
+from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration, BitsAndBytesConfig
+from qwen_vl_utils import process_vision_info
 
 from qwen_agent.llm.fncall_prompts.nous_fncall_prompt import (
     NousFnCallPrompt,
@@ -264,29 +266,32 @@ def save_debug_image(image, filename_prefix, coords=None, radius=5, color=(255, 
 
 class Qwen25VLModel():
     def __init__(self, 
-                 base_url="http://localhost:8400/v1",
-                 api_key="empty",
-                 model_name="Qwen/Qwen2.5-VL-7B-Instruct"):
+                 model_name="../qwen25vl"):
         """
-        Initialize the client that calls your remote model.
-        :param base_url: The URL of your inference endpoint
-        :param api_key:  The API key (if any)
-        :param model_name: Model name for remote inference
+        Initialize the local Qwen2.5-VL-7B model with 4-bit quantization.
+        :param model_name: Local path to the model directory
         """
-        self.client = OpenAI(
-            base_url=base_url,
-            api_key=api_key
-        )
         self.model_name = model_name
+        self.model = None
+        self.processor = None
         self.regionfocus_coords = []
         self.generation_config = {}
 
     def load_model(self):
         """
-        In the new endpoint-based version, we do not actually
-        load a model locally. This can be a no-op (or removed).
+        Load the model locally with 4-bit quantization.
         """
-        pass
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+        )
+        self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            self.model_name, 
+            torch_dtype=torch.float16, 
+            device_map="cuda:0",
+            quantization_config=quantization_config,
+        )
+        self.processor = AutoProcessor.from_pretrained(self.model_name)
 
     def set_generation_config(self, **kwargs):
         """
@@ -298,34 +303,75 @@ class Qwen25VLModel():
 
     def _call_endpoint(self, messages, temperature=0, top_p=1.0):
         """
-        Helper method to call the OpenAI-compatible API endpoint with robust error handling.
+        Helper method to call the local model.
         """
-        max_retries = 2
-        timeout = 10  # seconds
-        
-        for attempt in range(max_retries):
-            try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=messages,
-                    temperature=temperature,
-                    top_p=top_p,
-                    timeout=timeout,
-                    max_tokens=1024,
-                    #**self.generation_config
-                )
-                return response.choices[0].message.content
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    # Calculate exponential backoff time (1s, 2s, 4s, etc.)
-                    wait_time = 2 ** attempt
-                    print(f"API call failed (attempt {attempt+1}/{max_retries}): {e}")
-                    print(f"Retrying in {wait_time} seconds...")
-                    import time
-                    time.sleep(wait_time)
-                else:
-                    print(f"Error calling API after {max_retries} attempts: {e}")
-                    return "Error: Unable to get a response from the model after multiple attempts."
+        # Convert the OpenAI-style image_url to Qwen-VL style
+        formatted_messages = []
+        for msg in messages:
+            if isinstance(msg["content"], str):
+                # Handle case where content is a simple string instead of a list
+                formatted_messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
+            else:
+                formatted_msg = {"role": msg["role"], "content": []}
+                for content_item in msg["content"]:
+                    if content_item["type"] == "image_url":
+                        # Extract base64 and add image type
+                        url = content_item["image_url"]["url"]
+                        formatted_msg["content"].append({
+                            "type": "image",
+                            "image": url
+                        })
+                    else:
+                        formatted_msg["content"].append(content_item)
+                formatted_messages.append(formatted_msg)
+            
+        # Ensure generation configuration matches logic
+        if temperature == 0:
+            do_sample = False
+            top_p = None
+        else:
+            do_sample = True
+            
+        try:
+            # Preparation for inference
+            text = self.processor.apply_chat_template(
+                formatted_messages, tokenize=False, add_generation_prompt=True
+            )
+            image_inputs, video_inputs = process_vision_info(formatted_messages)
+            
+            inputs = self.processor(
+                text=[text],
+                images=image_inputs,
+                videos=video_inputs,
+                padding=True,
+                return_tensors="pt",
+            ).to(self.model.device)
+            
+            # Generate output
+            generated_ids = self.model.generate(
+                **inputs, 
+                max_new_tokens=1024,
+                temperature=temperature if do_sample else None,
+                top_p=top_p if do_sample else None,
+                do_sample=do_sample
+            )
+            
+            # Post-process output
+            generated_ids_trimmed = [
+                out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+            ]
+            output_text = self.processor.batch_decode(
+                generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+            )
+            
+            return output_text[0]
+            
+        except Exception as e:
+            print(f"Error calling local model: {e}")
+            return "Error: Unable to get a response from the model."
 
     def ground(self, instruction, image):
         """
