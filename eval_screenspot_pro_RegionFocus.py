@@ -56,6 +56,10 @@ def build_model(args):
         from models.qwen25vl_RegionFocus_7b import Qwen25VLModel
         model = Qwen25VLModel()
         model.load_model()
+    elif model_type == "smolvlm2_RegionFocus":
+        from models.smolvlm2_RegionFocus import SmolVLM2Model
+        model = SmolVLM2Model()
+        model.load_model()
     else:
         raise ValueError(f"Unsupported model type {model_type}.")
     model.set_generation_config(temperature=0, max_new_tokens=256)
